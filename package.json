@@ -1,0 +1,27 @@
+{
+  "name": "hospital-management",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev:api",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:api": "npm run dev -w apps/api",
+    "build": "npm run build -w packages/shared && npm run build -w apps/web && npm run build -w apps/api",
+    "seed": "npm run seed -w apps/api",
+    "lint": "npm run lint -w apps/web && npm run lint -w apps/api"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.19"
+  },
+  "dependencies": {
+    "mime-db": "^1.54.0",
+    "negotiator": "^0.6.4",
+    "readable-stream": "^4.7.0",
+    "whatwg-url": "^16.0.1"
+  }
+}

@@ -1,0 +1,70 @@
+# Hospital Management System - Quickstart Guide
+
+This file provides instructions on how to start the project locally, configure the database, and use the default seed credentials.
+
+## Prerequisites
+- Node.js (v18 or higher recommended)
+- MongoDB running locally at `mongodb://127.0.0.1:27017/hospital_management` (or running via Docker Compose)
+
+## How to Start the Project
+
+1. **Install Dependencies**
+   Run the following command in the root folder of the project to install all workspace packages:
+   ```bash
+   npm install
+   ```
+
+2. **Build Shared Packages**
+   Build the `@hospital/shared` library first, as it contains shared role and queue constants required by the API and Web applications:
+   ```bash
+   npm run build -w packages/shared
+   ```
+
+3. **Database Seeding**
+   Ensure your MongoDB instance is running, and then run the seeding command. This will populate departments (Cardiology, General Medicine, Pharmacy), initial medicines, inventory, and default users:
+   ```bash
+   npm run seed
+   ```
+
+4. **Run Development Servers**
+   To start the backend API server and frontend Web application in parallel, run:
+   
+   - **Start API server** (runs at http://localhost:4000):
+     ```bash
+     npm run dev:api
+     ```
+   
+   - **Start Web React client** (runs at http://localhost:5173):
+     ```bash
+     npm run dev:web
+     ```
+
+---
+
+## Default Seed Credentials
+
+All seed accounts use the password: `Password@123`
+
+| Role          | Email Address               | Description                                              |
+| ------------- | --------------------------- | -------------------------------------------------------- |
+| **Admin**     | `admin@hospital.local`      | Manage users, departments, inventory, and view audit logs |
+| **Reception** | `reception@hospital.local`  | Register patients, view live queue, print slips           |
+| **Doctor**    | `doctor@hospital.local`     | Consultation, write prescriptions, view medical histories|
+| **Chemist**   | `chemist@hospital.local`    | Pack medicines, update order collection status            |
+| **Patient**   | `patient@hospital.local`    | View queue position, prescription, invoices, and reports  |
+
+---
+
+## Production / Docker Setup
+
+You can also run the entire application using Docker:
+```bash
+docker compose up --build
+```
+- Web App: http://localhost:8080
+- API Server: http://localhost:4000
+
+To seed the MongoDB database running inside Docker:
+```bash
+docker compose exec api node apps/api/dist/seed.js
+```

@@ -1,0 +1,239 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { AlertTriangle, Boxes, Check, PackageCheck, Pill } from 'lucide-react'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { api, fetcher } from '../lib/api'
+import type { InventoryItem, Prescription } from '../lib/types'
+
+type Tab = 'orders' | 'inventory'
+
+const STATUS_COLORS: Record<string, string> = {
+  'sent-to-chemist': 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400',
+  packing: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400',
+  ready: 'bg-teal/10 text-teal',
+  collected: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400'
+}
+
+export function ChemistDashboard() {
+  const queryClient = useQueryClient()
+  const [activeTab, setActiveTab] = useState<Tab>('orders')
+
+  const { data: ordersData, isLoading: ordersLoading } = useQuery({
+    queryKey: ['chemist-orders'],
+    queryFn: () => fetcher<{ orders: Prescription[] }>('/chemist/orders'),
+    refetchInterval: 10000
+  })
+
+  const { data: inventoryData, isLoading: inventoryLoading } = useQuery({
+    queryKey: ['chemist-inventory'],
+    queryFn: () => fetcher<{ inventory: InventoryItem[] }>('/admin/inventory'),
+    refetchInterval: 30000,
+    enabled: activeTab === 'inventory'
+  })
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      api.put('/chemist/status', { prescriptionId: id, status }),
+    onSuccess: () => {
+      toast.success('Order status updated')
+      void queryClient.invalidateQueries({ queryKey: ['chemist-orders'] })
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Update failed')
+  })
+
+  const pendingOrders = (ordersData?.orders ?? []).filter((o) => o.status !== 'collected')
+  const inventory = inventoryData?.inventory ?? []
+  const lowStockCount = inventory.filter((i) => i.quantity <= i.reorderLevel).length
+
+  const tabs = [
+    { id: 'orders' as Tab, label: 'Pharmacy Orders', icon: Pill, badge: pendingOrders.length },
+    { id: 'inventory' as Tab, label: 'Inventory', icon: Boxes, badge: lowStockCount > 0 ? lowStockCount : undefined }
+  ]
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Pharmacy</h1>
+        <p className="text-sm text-slate-500">Receive prescriptions, pack medicines, and manage inventory.</p>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800">
+        {tabs.map(({ id, label, icon: Icon, badge }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === id ? 'border-teal text-teal' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+            {badge != null && badge > 0 && (
+              <span className={`rounded-full text-white text-xs px-1.5 py-0.5 leading-none ${id === 'inventory' ? 'bg-red-500' : 'bg-teal'}`}>
+                {badge}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Orders */}
+      {activeTab === 'orders' && (
+        <>
+          {ordersLoading && <div className="panel p-8 text-center text-slate-400">Loading orders…</div>}
+          {!ordersLoading && (ordersData?.orders ?? []).length === 0 && (
+            <div className="panel p-12 text-center">
+              <Pill className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+              <p className="text-slate-500">No pending pharmacy orders.</p>
+            </div>
+          )}
+          <div className="grid gap-4 lg:grid-cols-2">
+            {(ordersData?.orders ?? []).map((order) => (
+              <article key={order._id} className="panel p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-bold">{typeof order.patient === 'object' ? order.patient.name : 'Patient'}</h2>
+                    <p className="text-sm text-slate-500 mt-0.5">{order.diagnosis}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium shrink-0 ${STATUS_COLORS[order.status] ?? ''}`}>
+                    {order.status.replace(/-/g, ' ')}
+                  </span>
+                </div>
+
+                {order.sentToChemistAt && (
+                  <p className="text-xs text-slate-400 mt-2">
+                    Received: {new Date(order.sentToChemistAt).toLocaleString()}
+                  </p>
+                )}
+
+                <div className="mt-4 space-y-2">
+                  {order.medicines.map((item, index) => (
+                    <div key={`${item.name}-${index}`} className="flex items-center gap-3 rounded-md border border-slate-200 dark:border-slate-800 p-3 text-sm">
+                      <Pill className="h-4 w-4 text-teal shrink-0" />
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{item.name} <span className="text-slate-400 font-normal">×{item.quantity}</span></p>
+                        <p className="text-xs text-slate-500">{item.dosage} · {item.frequency} · {item.duration}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {order.status === 'sent-to-chemist' && (
+                    <button
+                      className="btn-secondary flex items-center gap-1.5 text-sm"
+                      onClick={() => statusMutation.mutate({ id: order._id, status: 'packing' })}
+                      disabled={statusMutation.isPending}
+                    >
+                      <PackageCheck className="h-4 w-4" /> Start Packing
+                    </button>
+                  )}
+                  {(order.status === 'sent-to-chemist' || order.status === 'packing') && (
+                    <button
+                      className="btn-primary flex items-center gap-1.5 text-sm"
+                      onClick={() => statusMutation.mutate({ id: order._id, status: 'ready' })}
+                      disabled={statusMutation.isPending}
+                    >
+                      <Check className="h-4 w-4" /> Mark Ready
+                    </button>
+                  )}
+                  {order.status === 'ready' && (
+                    <button
+                      className="btn-secondary flex items-center gap-1.5 text-sm text-green-600 border-green-200 dark:border-green-900 hover:bg-green-50 dark:hover:bg-green-950/20"
+                      onClick={() => statusMutation.mutate({ id: order._id, status: 'collected' })}
+                      disabled={statusMutation.isPending}
+                    >
+                      <Check className="h-4 w-4" /> Confirm Collected
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Inventory */}
+      {activeTab === 'inventory' && (
+        <>
+          {lowStockCount > 0 && (
+            <div className="flex items-center gap-3 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 p-3">
+              <AlertTriangle className="h-5 w-5 text-amber shrink-0" />
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                <strong>{lowStockCount}</strong> medicine{lowStockCount !== 1 ? 's are' : ' is'} below reorder level and need restocking.
+              </p>
+            </div>
+          )}
+
+          <section className="panel overflow-hidden">
+            <div className="border-b border-slate-200 dark:border-slate-800 p-4">
+              <h2 className="font-semibold">Pharmacy Inventory</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  <tr>
+                    <th className="p-3">Medicine</th>
+                    <th className="p-3">Category</th>
+                    <th className="p-3">Batch</th>
+                    <th className="p-3">Qty in Stock</th>
+                    <th className="p-3">Reorder Level</th>
+                    <th className="p-3">Expiry</th>
+                    <th className="p-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inventoryLoading && (
+                    <tr><td colSpan={7} className="p-8 text-center text-slate-400">Loading inventory…</td></tr>
+                  )}
+                  {!inventoryLoading && inventory.length === 0 && (
+                    <tr><td colSpan={7} className="p-8 text-center text-slate-400">No inventory records.</td></tr>
+                  )}
+                  {inventory.map((item) => {
+                    const isLow = item.quantity <= item.reorderLevel
+                    const isExpiringSoon = item.expiryDate && new Date(item.expiryDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                    return (
+                      <tr key={item._id} className={`border-t border-slate-100 dark:border-slate-800 ${isLow ? 'bg-red-50/50 dark:bg-red-950/10' : ''}`}>
+                        <td className="p-3">
+                          <p className="font-medium">{item.medicine?.name}</p>
+                          <p className="text-xs text-slate-400">{item.medicine?.genericName}</p>
+                        </td>
+                        <td className="p-3 text-slate-500 capitalize">{item.medicine?.category ?? '—'}</td>
+                        <td className="p-3 font-mono text-xs">{item.batchNo}</td>
+                        <td className="p-3">
+                          <span className={`font-bold text-base ${isLow ? 'text-red-600' : 'text-green-600'}`}>
+                            {item.quantity}
+                          </span>
+                          <span className="text-xs text-slate-400 ml-1">{item.medicine?.unit}</span>
+                        </td>
+                        <td className="p-3 text-slate-500">{item.reorderLevel}</td>
+                        <td className="p-3">
+                          {item.expiryDate ? (
+                            <span className={`text-xs ${isExpiringSoon ? 'text-red-500 font-semibold' : 'text-slate-500'}`}>
+                              {new Date(item.expiryDate).toLocaleDateString()}
+                              {isExpiringSoon && ' ⚠'}
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td className="p-3">
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            isLow
+                              ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400'
+                              : 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400'
+                          }`}>
+                            {isLow ? 'Low Stock' : 'In Stock'}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      )}
+    </div>
+  )
+}

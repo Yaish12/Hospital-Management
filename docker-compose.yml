@@ -1,0 +1,44 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      MONGODB_URI: mongodb://mongo:27017/hospital_management
+      JWT_ACCESS_SECRET: replace-this-access-secret
+      JWT_REFRESH_SECRET: replace-this-refresh-secret
+      CLIENT_ORIGIN: http://localhost:5173,http://localhost:8080
+      UPLOAD_DIR: uploads
+    volumes:
+      - api-uploads:/app/uploads
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_URL: http://localhost:4000/api
+        VITE_SOCKET_URL: http://localhost:4000
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+
+volumes:
+  mongo-data:
+  api-uploads:
