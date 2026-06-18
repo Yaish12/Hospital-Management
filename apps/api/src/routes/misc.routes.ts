@@ -18,6 +18,9 @@ import {
   departments,
   doctors,
   inventory,
+  addInventory,
+  updateInventoryQty,
+  createMedicine,
   medicines,
   notifications,
   patientHome,
@@ -52,7 +55,10 @@ adminRoutes.put('/departments/:id', authorize('admin'), updateDepartment)
 adminRoutes.delete('/departments/:id', authorize('admin'), deleteDepartment)
 adminRoutes.get('/doctors', authorize('admin', 'receptionist', 'doctor'), doctors)
 adminRoutes.get('/medicines', authorize('admin', 'doctor', 'chemist'), medicines)
+adminRoutes.post('/medicines', authorize('admin', 'chemist'), createMedicine)
 adminRoutes.get('/inventory', authorize('admin', 'chemist'), inventory)
+adminRoutes.post('/inventory', authorize('admin', 'chemist'), addInventory)
+adminRoutes.put('/inventory/qty', authorize('admin', 'chemist'), updateInventoryQty)
 adminRoutes.get('/audit-logs', authorize('admin'), auditLogs)
 
 export const patientPortalRoutes = Router()

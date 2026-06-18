@@ -1,5 +1,22 @@
+import mongoose from 'mongoose'
 import { Appointment, AuditLog, Billing, Chemist, Department, Doctor, Inventory, Medicine, Notification, Patient, Prescription, Queue, Receptionist, Report, User } from '../models/index.js'
 import { AppError, asyncHandler } from '../utils/http.js'
+
+const toTrimmedString = (value: unknown) => String(value ?? '').trim()
+
+const toNumberOrDefault = (value: unknown, fallback: number) => {
+  if (value === undefined || value === null || value === '') return fallback
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) throw new AppError(400, 'Invalid numeric value')
+  return parsed
+}
+
+const toOptionalDate = (value: unknown) => {
+  if (!value) return undefined
+  const date = new Date(String(value))
+  if (Number.isNaN(date.getTime())) throw new AppError(400, 'Invalid expiry date')
+  return date
+}
 
 export const billingList = asyncHandler(async (req, res) => {
   let filter: Record<string, unknown> = {}
@@ -168,6 +185,8 @@ export const deleteDepartment = asyncHandler(async (req, res) => {
   await AuditLog.create({ actor: req.user?.id, action: 'department.delete', entity: 'Department', entityId: String(department._id), ip: req.ip })
   res.json({ message: 'Department deleted' })
 })
+
+export const departments = asyncHandler(async (_req, res) => {
   const departments = await Department.find().sort({ name: 1 })
   res.json({ departments })
 })
@@ -190,6 +209,73 @@ export const medicines = asyncHandler(async (_req, res) => {
 export const inventory = asyncHandler(async (_req, res) => {
   const inventory = await Inventory.find().sort({ updatedAt: -1 }).populate('medicine')
   res.json({ inventory })
+})
+
+export const addInventory = asyncHandler(async (req, res) => {
+  const { medicine, batchNo, quantity, reorderLevel, expiryDate, location } = req.body
+  if (!mongoose.isValidObjectId(medicine)) throw new AppError(400, 'Valid medicine is required')
+
+  const existingMedicine = await Medicine.findById(medicine)
+  if (!existingMedicine) throw new AppError(404, 'Medicine not found')
+
+  const cleanBatchNo = toTrimmedString(batchNo)
+  if (!cleanBatchNo) throw new AppError(400, 'Batch number is required')
+
+  const stockQuantity = toNumberOrDefault(quantity, Number.NaN)
+  if (!Number.isInteger(stockQuantity) || stockQuantity < 0) throw new AppError(400, 'Quantity must be zero or a positive whole number')
+
+  const stockReorderLevel = toNumberOrDefault(reorderLevel, 20)
+  if (!Number.isInteger(stockReorderLevel) || stockReorderLevel < 0) throw new AppError(400, 'Reorder level must be zero or a positive whole number')
+
+  const item = await Inventory.create({
+    medicine,
+    batchNo: cleanBatchNo,
+    quantity: stockQuantity,
+    reorderLevel: stockReorderLevel,
+    expiryDate: toOptionalDate(expiryDate),
+    location: toTrimmedString(location)
+  })
+  const populated = await item.populate('medicine')
+  await AuditLog.create({ actor: req.user?.id, action: 'inventory.add', entity: 'Inventory', entityId: String(item._id), ip: req.ip })
+  res.status(201).json({ item: populated })
+})
+
+export const updateInventoryQty = asyncHandler(async (req, res) => {
+  const { itemId, quantity, mode } = req.body
+  if (!mongoose.isValidObjectId(itemId)) throw new AppError(400, 'Valid inventory item is required')
+
+  const stockQuantity = toNumberOrDefault(quantity, Number.NaN)
+  if (!Number.isInteger(stockQuantity) || stockQuantity < 0) throw new AppError(400, 'Quantity must be zero or a positive whole number')
+  if (mode === 'add' && stockQuantity < 1) throw new AppError(400, 'Restock quantity must be at least 1')
+
+  // mode: 'set' replaces, 'add' increments
+  const update = mode === 'add' ? { $inc: { quantity: stockQuantity } } : { quantity: stockQuantity }
+  const item = await Inventory.findByIdAndUpdate(itemId, update, { new: true }).populate('medicine')
+  if (!item) throw new AppError(404, 'Inventory item not found')
+  await AuditLog.create({ actor: req.user?.id, action: 'inventory.update', entity: 'Inventory', entityId: itemId, ip: req.ip })
+  res.json({ item })
+})
+
+export const createMedicine = asyncHandler(async (req, res) => {
+  const name = toTrimmedString(req.body.name)
+  if (!name) throw new AppError(400, 'Medicine name is required')
+
+  const existing = await Medicine.findOne({ name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') })
+  if (existing) throw new AppError(409, 'Medicine already exists')
+
+  const price = toNumberOrDefault(req.body.price, 0)
+  if (price < 0) throw new AppError(400, 'Price cannot be negative')
+
+  const medicine = await Medicine.create({
+    name,
+    genericName: toTrimmedString(req.body.genericName),
+    manufacturer: toTrimmedString(req.body.manufacturer),
+    category: toTrimmedString(req.body.category),
+    unit: toTrimmedString(req.body.unit) || 'tablet',
+    price,
+    active: req.body.active ?? true
+  })
+  res.status(201).json({ medicine })
 })
 
 export const auditLogs = asyncHandler(async (_req, res) => {

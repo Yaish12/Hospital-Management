@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Boxes, Check, PackageCheck, Pill } from 'lucide-react'
+import { AlertTriangle, Boxes, Check, PackageCheck, Pill, Plus, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { api, fetcher } from '../lib/api'
+import { AddInventoryModal } from '../components/AddInventoryModal'
 import type { InventoryItem, Prescription } from '../lib/types'
 
 type Tab = 'orders' | 'inventory'
@@ -17,6 +18,9 @@ const STATUS_COLORS: Record<string, string> = {
 export function ChemistDashboard() {
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<Tab>('orders')
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [restockItem, setRestockItem] = useState<InventoryItem | null>(null)
+  const [restockQty, setRestockQty] = useState(50)
 
   const { data: ordersData, isLoading: ordersLoading } = useQuery({
     queryKey: ['chemist-orders'],
@@ -41,6 +45,17 @@ export function ChemistDashboard() {
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Update failed')
   })
 
+  const restockMutation = useMutation({
+    mutationFn: ({ itemId, quantity }: { itemId: string; quantity: number }) =>
+      api.put('/admin/inventory/qty', { itemId, quantity, mode: 'add' }),
+    onSuccess: () => {
+      toast.success('Stock updated')
+      setRestockItem(null)
+      void queryClient.invalidateQueries({ queryKey: ['chemist-inventory'] })
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to update stock')
+  })
+
   const pendingOrders = (ordersData?.orders ?? []).filter((o) => o.status !== 'collected')
   const inventory = inventoryData?.inventory ?? []
   const lowStockCount = inventory.filter((i) => i.quantity <= i.reorderLevel).length
@@ -52,9 +67,17 @@ export function ChemistDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Pharmacy</h1>
-        <p className="text-sm text-slate-500">Receive prescriptions, pack medicines, and manage inventory.</p>
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Pharmacy</h1>
+          <p className="text-sm text-slate-500">Receive prescriptions, pack medicines, and manage inventory.</p>
+        </div>
+        {activeTab === 'inventory' && (
+          <button className="btn-primary flex items-center gap-2" onClick={() => setShowAddModal(true)}>
+            <Plus className="h-4 w-4" /> Add to Inventory
+          </button>
+        )}
       </div>
 
       {/* Tab bar */}
@@ -100,13 +123,9 @@ export function ChemistDashboard() {
                     {order.status.replace(/-/g, ' ')}
                   </span>
                 </div>
-
                 {order.sentToChemistAt && (
-                  <p className="text-xs text-slate-400 mt-2">
-                    Received: {new Date(order.sentToChemistAt).toLocaleString()}
-                  </p>
+                  <p className="text-xs text-slate-400 mt-2">Received: {new Date(order.sentToChemistAt).toLocaleString()}</p>
                 )}
-
                 <div className="mt-4 space-y-2">
                   {order.medicines.map((item, index) => (
                     <div key={`${item.name}-${index}`} className="flex items-center gap-3 rounded-md border border-slate-200 dark:border-slate-800 p-3 text-sm">
@@ -118,32 +137,19 @@ export function ChemistDashboard() {
                     </div>
                   ))}
                 </div>
-
                 <div className="mt-4 flex flex-wrap gap-2">
                   {order.status === 'sent-to-chemist' && (
-                    <button
-                      className="btn-secondary flex items-center gap-1.5 text-sm"
-                      onClick={() => statusMutation.mutate({ id: order._id, status: 'packing' })}
-                      disabled={statusMutation.isPending}
-                    >
+                    <button className="btn-secondary flex items-center gap-1.5 text-sm" onClick={() => statusMutation.mutate({ id: order._id, status: 'packing' })} disabled={statusMutation.isPending}>
                       <PackageCheck className="h-4 w-4" /> Start Packing
                     </button>
                   )}
                   {(order.status === 'sent-to-chemist' || order.status === 'packing') && (
-                    <button
-                      className="btn-primary flex items-center gap-1.5 text-sm"
-                      onClick={() => statusMutation.mutate({ id: order._id, status: 'ready' })}
-                      disabled={statusMutation.isPending}
-                    >
+                    <button className="btn-primary flex items-center gap-1.5 text-sm" onClick={() => statusMutation.mutate({ id: order._id, status: 'ready' })} disabled={statusMutation.isPending}>
                       <Check className="h-4 w-4" /> Mark Ready
                     </button>
                   )}
                   {order.status === 'ready' && (
-                    <button
-                      className="btn-secondary flex items-center gap-1.5 text-sm text-green-600 border-green-200 dark:border-green-900 hover:bg-green-50 dark:hover:bg-green-950/20"
-                      onClick={() => statusMutation.mutate({ id: order._id, status: 'collected' })}
-                      disabled={statusMutation.isPending}
-                    >
+                    <button className="btn-secondary flex items-center gap-1.5 text-sm text-green-600 border-green-200 dark:border-green-900 hover:bg-green-50 dark:hover:bg-green-950/20" onClick={() => statusMutation.mutate({ id: order._id, status: 'collected' })} disabled={statusMutation.isPending}>
                       <Check className="h-4 w-4" /> Confirm Collected
                     </button>
                   )}
@@ -161,14 +167,13 @@ export function ChemistDashboard() {
             <div className="flex items-center gap-3 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 p-3">
               <AlertTriangle className="h-5 w-5 text-amber shrink-0" />
               <p className="text-sm text-amber-700 dark:text-amber-400">
-                <strong>{lowStockCount}</strong> medicine{lowStockCount !== 1 ? 's are' : ' is'} below reorder level and need restocking.
+                <strong>{lowStockCount}</strong> medicine{lowStockCount !== 1 ? 's are' : ' is'} below reorder level.
               </p>
             </div>
           )}
-
           <section className="panel overflow-hidden">
-            <div className="border-b border-slate-200 dark:border-slate-800 p-4">
-              <h2 className="font-semibold">Pharmacy Inventory</h2>
+            <div className="border-b border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between">
+              <h2 className="font-semibold">Pharmacy Inventory ({inventory.length} items)</h2>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
@@ -181,15 +186,12 @@ export function ChemistDashboard() {
                     <th className="p-3">Reorder Level</th>
                     <th className="p-3">Expiry</th>
                     <th className="p-3">Status</th>
+                    <th className="p-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {inventoryLoading && (
-                    <tr><td colSpan={7} className="p-8 text-center text-slate-400">Loading inventory…</td></tr>
-                  )}
-                  {!inventoryLoading && inventory.length === 0 && (
-                    <tr><td colSpan={7} className="p-8 text-center text-slate-400">No inventory records.</td></tr>
-                  )}
+                  {inventoryLoading && <tr><td colSpan={8} className="p-8 text-center text-slate-400">Loading inventory…</td></tr>}
+                  {!inventoryLoading && inventory.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-slate-400">No inventory records. Add medicines using the button above.</td></tr>}
                   {inventory.map((item) => {
                     const isLow = item.quantity <= item.reorderLevel
                     const isExpiringSoon = item.expiryDate && new Date(item.expiryDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
@@ -202,28 +204,28 @@ export function ChemistDashboard() {
                         <td className="p-3 text-slate-500 capitalize">{item.medicine?.category ?? '—'}</td>
                         <td className="p-3 font-mono text-xs">{item.batchNo}</td>
                         <td className="p-3">
-                          <span className={`font-bold text-base ${isLow ? 'text-red-600' : 'text-green-600'}`}>
-                            {item.quantity}
-                          </span>
+                          <span className={`font-bold text-base ${isLow ? 'text-red-600' : 'text-green-600'}`}>{item.quantity}</span>
                           <span className="text-xs text-slate-400 ml-1">{item.medicine?.unit}</span>
                         </td>
                         <td className="p-3 text-slate-500">{item.reorderLevel}</td>
                         <td className="p-3">
-                          {item.expiryDate ? (
-                            <span className={`text-xs ${isExpiringSoon ? 'text-red-500 font-semibold' : 'text-slate-500'}`}>
-                              {new Date(item.expiryDate).toLocaleDateString()}
-                              {isExpiringSoon && ' ⚠'}
-                            </span>
-                          ) : '—'}
+                          {item.expiryDate
+                            ? <span className={`text-xs ${isExpiringSoon ? 'text-red-500 font-semibold' : 'text-slate-500'}`}>{new Date(item.expiryDate).toLocaleDateString()}{isExpiringSoon && ' ⚠'}</span>
+                            : '—'}
                         </td>
                         <td className="p-3">
-                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                            isLow
-                              ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400'
-                              : 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400'
-                          }`}>
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${isLow ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400' : 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400'}`}>
                             {isLow ? 'Low Stock' : 'In Stock'}
                           </span>
+                        </td>
+                        <td className="p-3">
+                          <button
+                            title="Restock — add units"
+                            className="flex items-center gap-1 text-xs btn-secondary px-2 py-1 h-auto text-teal border-teal/30 hover:bg-teal/5"
+                            onClick={() => { setRestockItem(item); setRestockQty(50) }}
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" /> Restock
+                          </button>
                         </td>
                       </tr>
                     )
@@ -233,6 +235,53 @@ export function ChemistDashboard() {
             </div>
           </section>
         </>
+      )}
+
+      {showAddModal && (
+        <AddInventoryModal
+          onClose={() => setShowAddModal(false)}
+          onAdded={() => {
+            void queryClient.invalidateQueries({ queryKey: ['chemist-inventory'] })
+          }}
+        />
+      )}
+
+      {/* ── Restock Modal ────────────────────────────────────────────── */}
+      {restockItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="panel w-full max-w-sm p-6 bg-white dark:bg-slate-900 shadow-xl rounded-lg space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <RefreshCw className="h-5 w-5 text-teal" /> Restock Medicine
+            </h3>
+            <div className="rounded-md bg-slate-50 dark:bg-slate-800 p-3 text-sm">
+              <p className="font-semibold">{restockItem.medicine?.name}</p>
+              <p className="text-slate-500 text-xs mt-0.5">Batch: {restockItem.batchNo} · Current stock: <span className="font-bold">{restockItem.quantity}</span> {restockItem.medicine?.unit}</p>
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-2">Units to Add</label>
+              <input
+                type="number"
+                min={1}
+                className="field text-lg font-bold"
+                value={restockQty}
+                onChange={(e) => setRestockQty(Number(e.target.value))}
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                New total will be <span className="font-semibold text-teal">{restockItem.quantity + restockQty}</span> {restockItem.medicine?.unit}
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button className="btn-secondary flex-1" onClick={() => setRestockItem(null)}>Cancel</button>
+              <button
+                className="btn-primary flex-1"
+                disabled={restockMutation.isPending || restockQty < 1}
+                onClick={() => restockMutation.mutate({ itemId: restockItem._id, quantity: restockQty })}
+              >
+                {restockMutation.isPending ? 'Updating…' : `Add ${restockQty} units`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

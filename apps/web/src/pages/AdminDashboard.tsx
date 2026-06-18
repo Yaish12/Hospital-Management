@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { api, fetcher } from '../lib/api'
+import { AddInventoryModal } from '../components/AddInventoryModal'
 import { ChartPanel } from '../components/ChartPanel'
 import { Metric } from '../components/Metric'
 
@@ -51,6 +52,7 @@ export function AdminDashboard() {
   const [isDeptModalOpen, setIsDeptModalOpen] = useState(false)
   const [editingDept, setEditingDept] = useState<any | null>(null)
   const [deleteDeptId, setDeleteDeptId] = useState<string | null>(null)
+  const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false)
 
   const { data: analytics } = useQuery({ queryKey: ['analytics'], queryFn: () => fetcher<Analytics>('/admin/analytics') })
   const { data: usersData } = useQuery({ queryKey: ['users'], queryFn: () => fetcher<{ users: any[] }>('/admin/users') })
@@ -148,6 +150,11 @@ export function AdminDashboard() {
               <Plus className="h-4 w-4" /> Add Department
             </button>
           )}
+          {activeTab === 'inventory' && (
+            <button className="btn-primary flex items-center gap-2" onClick={() => setIsInventoryModalOpen(true)}>
+              <Plus className="h-4 w-4" /> Add to Inventory
+            </button>
+          )}
         </div>
       </div>
 
@@ -187,7 +194,7 @@ export function AdminDashboard() {
             <div className="panel p-4">
               <h2 className="font-semibold text-lg mb-4">Quick Links</h2>
               <div className="space-y-2">
-                {([['Manage System Users', 'users', Users], ['Manage Departments', 'departments', Building2], ['Security & Audit Trails', 'audit', ShieldAlert]] as const).map(([label, tab, Icon]) => (
+                {([['Manage System Users', 'users', Users], ['Manage Departments', 'departments', Building2], ['Manage Inventory', 'inventory', Boxes], ['Security & Audit Trails', 'audit', ShieldAlert]] as const).map(([label, tab, Icon]) => (
                   <button key={tab} onClick={() => setActiveTab(tab)} className="w-full flex items-center justify-between p-3 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-sm font-medium transition">
                     <span>{label}</span><Icon className="h-4 w-4 text-slate-500" />
                   </button>
@@ -553,6 +560,17 @@ export function AdminDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {isInventoryModalOpen && (
+        <AddInventoryModal
+          onClose={() => setIsInventoryModalOpen(false)}
+          onAdded={() => {
+            void queryClient.invalidateQueries({ queryKey: ['inventory'] })
+            void queryClient.invalidateQueries({ queryKey: ['analytics'] })
+            void queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+          }}
+        />
       )}
     </div>
   )
