@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileText, Upload, ExternalLink, FileUp } from 'lucide-react'
+import { FileText, Upload, ExternalLink, FileUp, FlaskConical } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
@@ -12,6 +12,19 @@ type UploadValues = {
   type: string
   notes: string
 }
+
+const LAB_TESTS = [
+  'Complete Blood Count',
+  'Blood Sugar Fasting',
+  'Blood Sugar PP',
+  'Liver Function Test',
+  'Kidney Function Test',
+  'Lipid Profile',
+  'Thyroid Profile',
+  'Urine Routine',
+  'Electrolytes',
+  'X-Ray / Radiology'
+]
 
 export function ReportsPage() {
   const queryClient = useQueryClient()
@@ -71,6 +84,19 @@ export function ReportsPage() {
           <Upload className="h-4 w-4" /> Upload Report
         </button>
       </div>
+
+      <section className="panel p-4">
+        <h2 className="mb-3 flex items-center gap-2 font-semibold">
+          <FlaskConical className="h-4 w-4 text-teal" /> Laboratory Test List
+        </h2>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {LAB_TESTS.map((test) => (
+            <div key={test} className="rounded-md border border-slate-200 px-3 py-2 text-sm dark:border-slate-800">
+              {test}
+            </div>
+          ))}
+        </div>
+      </section>
 
       {/* Reports grid */}
       {isLoading && <div className="panel p-8 text-center text-slate-400">Loading reports…</div>}

@@ -66,6 +66,29 @@ const NAV_BOTTOM: NavEntry[] = [
   { label: 'Settings', href: '/settings', icon: KeyRound },
 ]
 
+const playAlertTone = () => {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioCtx) return
+    const ctx = new AudioCtx()
+    const gain = ctx.createGain()
+    const oscillator = ctx.createOscillator()
+    oscillator.type = 'sine'
+    oscillator.frequency.setValueAtTime(880, ctx.currentTime)
+    oscillator.frequency.setValueAtTime(660, ctx.currentTime + 0.12)
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28)
+    oscillator.connect(gain)
+    gain.connect(ctx.destination)
+    oscillator.start()
+    oscillator.stop(ctx.currentTime + 0.3)
+    window.setTimeout(() => void ctx.close(), 450)
+  } catch {
+    // Browser may block audio until the user interacts with the page.
+  }
+}
+
 export function AppLayout() {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
@@ -91,15 +114,22 @@ export function AppLayout() {
 
   useEffect(() => {
     const socket = getSocket()
-    socket.on('notification:new', (payload) => {
-      toast(payload.title ?? 'New notification')
+    socket.on('notification:new', (payload: Partial<Notification>) => {
+      playAlertTone()
+      toast(payload.title ?? 'New notification', {
+        description: payload.message
+      })
       void refetchNotifs()
     })
     socket.on('medicine:ready', () => {
+      playAlertTone()
       toast.success('Medicines are ready for pickup')
       void refetchNotifs()
     })
-    socket.on('queue:update', () => toast('Queue updated'))
+    socket.on('queue:update', () => {
+      playAlertTone()
+      toast('Queue updated')
+    })
     return () => {
       socket.off('notification:new')
       socket.off('medicine:ready')

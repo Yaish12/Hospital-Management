@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { IndianRupee, Plus, CheckCircle2, RefreshCw, Trash2 } from 'lucide-react'
+import { IndianRupee, Plus, CreditCard, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { toast } from 'sonner'
@@ -15,6 +15,11 @@ type CreateValues = {
   items: BillItem[]
 }
 
+type PaymentValues = {
+  paymentMethod: 'cash' | 'upi' | 'card' | 'insurance' | 'other'
+  paymentReference?: string
+}
+
 const STATUS_COLORS: Record<string, string> = {
   unpaid: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400',
   paid: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400',
@@ -25,6 +30,7 @@ export function BillingPage() {
   const queryClient = useQueryClient()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
+  const [paymentBill, setPaymentBill] = useState<Bill | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['billing', statusFilter],
@@ -36,8 +42,11 @@ export function BillingPage() {
     queryFn: () => fetcher<{ patients: any[] }>('/patients')
   })
 
-  const { register, handleSubmit, control, watch, reset } = useForm<CreateValues>({
+  const { register, handleSubmit, control, watch, reset, formState: { errors } } = useForm<CreateValues>({
     defaultValues: { items: [{ label: 'Consultation', amount: 500 }], discount: 0, tax: 0 }
+  })
+  const { register: registerPayment, handleSubmit: handlePaymentSubmit, reset: resetPayment } = useForm<PaymentValues>({
+    defaultValues: { paymentMethod: 'cash', paymentReference: '' }
   })
 
   const { fields, append, remove } = useFieldArray({ control, name: 'items' })
@@ -59,10 +68,12 @@ export function BillingPage() {
   })
 
   const statusMutation = useMutation({
-    mutationFn: ({ billId, status }: { billId: string; status: string }) =>
-      api.put('/billing/status', { billId, status }),
+    mutationFn: ({ billId, status, paymentMethod, paymentReference }: { billId: string; status: string; paymentMethod?: string; paymentReference?: string }) =>
+      api.put('/billing/status', { billId, status, paymentMethod, paymentReference }),
     onSuccess: () => {
       toast.success('Bill status updated')
+      setPaymentBill(null)
+      resetPayment({ paymentMethod: 'cash', paymentReference: '' })
       void queryClient.invalidateQueries({ queryKey: ['billing'] })
     },
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Failed to update bill')
@@ -71,6 +82,10 @@ export function BillingPage() {
   const bills = (data?.bills ?? []).filter((b) => !statusFilter || b.status === statusFilter)
   const totalRevenue = (data?.bills ?? []).filter((b) => b.status === 'paid').reduce((s, b) => s + b.total, 0)
   const unpaidCount = (data?.bills ?? []).filter((b) => b.status === 'unpaid').length
+  const openPayment = (bill: Bill) => {
+    setPaymentBill(bill)
+    resetPayment({ paymentMethod: bill.paymentMethod ?? 'cash', paymentReference: bill.paymentReference ?? '' })
+  }
 
   return (
     <div className="space-y-6">
@@ -138,16 +153,17 @@ export function BillingPage() {
                 <th className="p-3">Discount</th>
                 <th className="p-3">Total</th>
                 <th className="p-3">Status</th>
+                <th className="p-3">Payment</th>
                 <th className="p-3">Date</th>
                 <th className="p-3">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={8} className="p-8 text-center text-slate-400">Loading bills…</td></tr>
+                <tr><td colSpan={9} className="p-8 text-center text-slate-400">Loading bills...</td></tr>
               )}
               {!isLoading && bills.length === 0 && (
-                <tr><td colSpan={8} className="p-8 text-center text-slate-400">No bills found.</td></tr>
+                <tr><td colSpan={9} className="p-8 text-center text-slate-400">No bills found.</td></tr>
               )}
               {bills.map((bill) => {
                 const patient = typeof bill.patient === 'object' ? bill.patient : null
@@ -171,16 +187,26 @@ export function BillingPage() {
                         {bill.status}
                       </span>
                     </td>
+                    <td className="p-3 text-xs text-slate-500">
+                      {bill.paymentMethod ? (
+                        <>
+                          <p className="font-medium capitalize text-slate-700 dark:text-slate-300">{bill.paymentMethod}</p>
+                          {bill.paymentReference && <p className="font-mono">{bill.paymentReference}</p>}
+                        </>
+                      ) : (
+                        'Pending'
+                      )}
+                    </td>
                     <td className="p-3 text-slate-500 text-xs">{new Date(bill.createdAt).toLocaleDateString()}</td>
                     <td className="p-3">
                       <div className="flex items-center gap-1">
                         {bill.status === 'unpaid' && (
                           <button
-                            title="Mark Paid"
+                            title="Collect payment"
                             className="p-1.5 rounded hover:bg-green-50 dark:hover:bg-green-950/20 text-green-600"
-                            onClick={() => statusMutation.mutate({ billId: bill._id, status: 'paid' })}
+                            onClick={() => openPayment(bill)}
                           >
-                            <CheckCircle2 className="h-4 w-4" />
+                            <CreditCard className="h-4 w-4" />
                           </button>
                         )}
                         {bill.status === 'paid' && (
@@ -218,6 +244,7 @@ export function BillingPage() {
                     <option key={p._id} value={p._id}>{p.name} — {p.patientId}</option>
                   ))}
                 </select>
+                {errors.patient && <p className="mt-1 text-xs text-red-500">Select a patient before creating a bill.</p>}
               </div>
 
               {/* Bill Items */}
@@ -241,18 +268,22 @@ export function BillingPage() {
                     </div>
                   ))}
                 </div>
+                {errors.items && <p className="mt-1 text-xs text-red-500">Every bill item needs a description and amount greater than zero.</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Discount (₹)</label>
-                  <input type="number" className="field" defaultValue={0} {...register('discount', { valueAsNumber: true })} />
+                  <input type="number" min={0} className="field" defaultValue={0} {...register('discount', { valueAsNumber: true, min: 0 })} />
                 </div>
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Tax (₹)</label>
-                  <input type="number" className="field" defaultValue={0} {...register('tax', { valueAsNumber: true })} />
+                  <input type="number" min={0} className="field" defaultValue={0} {...register('tax', { valueAsNumber: true, min: 0 })} />
                 </div>
               </div>
+              {(errors.discount || errors.tax || total < 0) && (
+                <p className="text-xs text-red-500">Discount and tax must be positive, and total cannot be negative.</p>
+              )}
 
               {/* Total preview */}
               <div className="rounded-md bg-slate-50 dark:bg-slate-800 p-3 text-sm">
@@ -268,6 +299,58 @@ export function BillingPage() {
                 <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-primary" disabled={createMutation.isPending}>
                   {createMutation.isPending ? 'Creating…' : 'Create Bill'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {paymentBill && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="panel w-full max-w-md p-6 bg-white dark:bg-slate-900 shadow-xl rounded-lg">
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-teal" /> Collect Payment
+            </h3>
+            <div className="mb-4 rounded-md bg-slate-50 p-3 text-sm dark:bg-slate-800">
+              <div className="flex justify-between text-slate-500">
+                <span>Patient</span>
+                <span>{typeof paymentBill.patient === 'object' ? paymentBill.patient.name : 'Patient'}</span>
+              </div>
+              <div className="mt-2 flex justify-between border-t border-slate-200 pt-2 text-base font-bold text-slate-900 dark:border-slate-700 dark:text-white">
+                <span>Total payable</span>
+                <span>₹{paymentBill.total}</span>
+              </div>
+            </div>
+            <form
+              className="space-y-4"
+              onSubmit={handlePaymentSubmit((values) =>
+                statusMutation.mutate({
+                  billId: paymentBill._id,
+                  status: 'paid',
+                  paymentMethod: values.paymentMethod,
+                  paymentReference: values.paymentReference
+                })
+              )}
+            >
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Payment Method</label>
+                <select className="field" {...registerPayment('paymentMethod', { required: true })}>
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="card">Card</option>
+                  <option value="insurance">Insurance</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Reference / Transaction ID</label>
+                <input className="field" placeholder="Optional for cash" {...registerPayment('paymentReference')} />
+              </div>
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button type="button" className="btn-secondary" onClick={() => setPaymentBill(null)}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={statusMutation.isPending}>
+                  {statusMutation.isPending ? 'Saving...' : 'Confirm Payment'}
                 </button>
               </div>
             </form>

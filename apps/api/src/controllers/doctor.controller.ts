@@ -1,4 +1,4 @@
-import { Doctor, Notification, Patient, Prescription, Queue } from '../models/index.js'
+import { Doctor, Medicine, Notification, Patient, Prescription, Queue } from '../models/index.js'
 import { AppError, asyncHandler } from '../utils/http.js'
 import { emitEvent } from '../socket.js'
 
@@ -39,6 +39,25 @@ export const createPrescription = asyncHandler(async (req, res) => {
   const doctor = await currentDoctor(req.user?.id)
   const patient = await Patient.findById(req.body.patient)
   if (!patient) throw new AppError(404, 'Patient not found')
+  if (!String(req.body.diagnosis ?? '').trim()) throw new AppError(400, 'Diagnosis is required')
+  if (!Array.isArray(req.body.medicines) || req.body.medicines.length === 0) throw new AppError(400, 'At least one medicine is required')
+
+  const medicines = await Promise.all(req.body.medicines.map(async (item: any) => {
+    const name = String(item.name ?? '').trim()
+    if (!name) throw new AppError(400, 'Medicine name is required')
+    const quantity = Math.max(Number(item.quantity ?? 1), 1)
+    const medicine = await Medicine.findOne({ name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') })
+    return {
+      medicine: medicine?._id,
+      name,
+      dosage: String(item.dosage ?? '').trim() || 'As directed',
+      frequency: String(item.frequency ?? '').trim() || 'As directed',
+      duration: String(item.duration ?? '').trim() || 'As directed',
+      instructions: String(item.instructions ?? '').trim(),
+      quantity
+    }
+  }))
+
   const prescription = await Prescription.create({
     patient: patient._id,
     doctor: doctor._id,
@@ -48,7 +67,7 @@ export const createPrescription = asyncHandler(async (req, res) => {
     dontList: req.body.dontList ?? [],
     followUpAt: req.body.followUpAt,
     vitals: req.body.vitals,
-    medicines: req.body.medicines,
+    medicines,
     status: 'sent-to-chemist',
     sentToChemistAt: new Date()
   })

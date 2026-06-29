@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Building2, LogIn } from 'lucide-react'
+import { Building2, Eye, EyeOff, Headphones, LogIn } from 'lucide-react'
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -18,6 +19,7 @@ type FormValues = z.infer<typeof schema>
 export function Login() {
   const navigate = useNavigate()
   const login = useAuthStore((state) => state.login)
+  const [showPassword, setShowPassword] = useState(false)
   const { register, handleSubmit, formState } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { email: 'admin@hospital.local', password: 'Password@123' }
@@ -48,10 +50,35 @@ export function Login() {
             </div>
           </div>
           <label className="text-sm font-medium">Email</label>
-          <input className="field mt-1" {...register('email')} />
+          <input className="field mt-1" autoComplete="email" {...register('email')} />
+          {formState.errors.email && (
+            <p className="mt-1 text-xs text-red-500">Enter a valid email address.</p>
+          )}
           <label className="mt-4 block text-sm font-medium">Password</label>
-          <input className="field mt-1" type="password" {...register('password')} />
-          <div className="mt-1 text-right">
+          <div className="relative mt-1">
+            <input
+              className="field pr-10"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              {...register('password')}
+            />
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded text-slate-400 hover:bg-slate-100 hover:text-teal dark:hover:bg-slate-800"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          {formState.errors.password && (
+            <p className="mt-1 text-xs text-red-500">Password must be at least 6 characters.</p>
+          )}
+          <div className="mt-2 flex items-center justify-between">
+            <Link to="/" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-teal">
+              <Headphones className="h-3.5 w-3.5" />
+              Help desk
+            </Link>
             <Link to="/forgot-password" className="text-xs text-teal hover:underline">Forgot password?</Link>
           </div>
           <button className="btn-primary mt-6 w-full" disabled={formState.isSubmitting}>

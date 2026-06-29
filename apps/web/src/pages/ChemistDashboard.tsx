@@ -31,8 +31,7 @@ export function ChemistDashboard() {
   const { data: inventoryData, isLoading: inventoryLoading } = useQuery({
     queryKey: ['chemist-inventory'],
     queryFn: () => fetcher<{ inventory: InventoryItem[] }>('/admin/inventory'),
-    refetchInterval: 30000,
-    enabled: activeTab === 'inventory'
+    refetchInterval: 30000
   })
 
   const statusMutation = useMutation({
@@ -59,6 +58,16 @@ export function ChemistDashboard() {
   const pendingOrders = (ordersData?.orders ?? []).filter((o) => o.status !== 'collected')
   const inventory = inventoryData?.inventory ?? []
   const lowStockCount = inventory.filter((i) => i.quantity <= i.reorderLevel).length
+  const inventoryByMedicineId = new Map(inventory.map((item) => [item.medicine?._id, item]))
+  const inventoryByName = new Map(inventory.map((item) => [item.medicine?.name?.toLowerCase(), item]))
+  const getStock = (medicine: Prescription['medicines'][number]) => {
+    const medicineId = typeof medicine.medicine === 'object' ? medicine.medicine?._id : medicine.medicine
+    return (medicineId ? inventoryByMedicineId.get(medicineId) : undefined) ?? inventoryByName.get(medicine.name.toLowerCase())
+  }
+  const getLineTotal = (medicine: Prescription['medicines'][number]) => {
+    const stock = getStock(medicine)
+    return Number(stock?.medicine?.price ?? 0) * Number(medicine.quantity || 0)
+  }
 
   const tabs = [
     { id: 'orders' as Tab, label: 'Pharmacy Orders', icon: Pill, badge: pendingOrders.length },
@@ -112,12 +121,21 @@ export function ChemistDashboard() {
             </div>
           )}
           <div className="grid gap-4 lg:grid-cols-2">
-            {(ordersData?.orders ?? []).map((order) => (
+            {(ordersData?.orders ?? []).map((order) => {
+              const medicineTotal = order.medicines.reduce((sum, item) => sum + getLineTotal(item), 0)
+              const hasUnavailable = order.medicines.some((item) => {
+                const stock = getStock(item)
+                return !stock || stock.quantity < Number(item.quantity || 1)
+              })
+              return (
               <article key={order._id} className="panel p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h2 className="font-bold">{typeof order.patient === 'object' ? order.patient.name : 'Patient'}</h2>
                     <p className="text-sm text-slate-500 mt-0.5">{order.diagnosis}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500">
+                      Medicine total: <span className="text-slate-900 dark:text-white">₹{medicineTotal}</span>
+                    </p>
                   </div>
                   <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium shrink-0 ${STATUS_COLORS[order.status] ?? ''}`}>
                     {order.status.replace(/-/g, ' ')}
@@ -134,9 +152,23 @@ export function ChemistDashboard() {
                         <p className="font-medium truncate">{item.name} <span className="text-slate-400 font-normal">×{item.quantity}</span></p>
                         <p className="text-xs text-slate-500">{item.dosage} · {item.frequency} · {item.duration}</p>
                       </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                        getStock(item) && getStock(item)!.quantity >= Number(item.quantity || 1)
+                          ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400'
+                          : 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400'
+                      }`}>
+                        {getStock(item) && getStock(item)!.quantity >= Number(item.quantity || 1)
+                          ? `Available (${getStock(item)!.quantity})`
+                          : 'Not available'}
+                      </span>
                     </div>
                   ))}
                 </div>
+                {hasUnavailable && (
+                  <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:bg-red-950/30 dark:text-red-300">
+                    One or more medicines are not available in the requested quantity. Restock before collection.
+                  </p>
+                )}
                 <div className="mt-4 flex flex-wrap gap-2">
                   {order.status === 'sent-to-chemist' && (
                     <button className="btn-secondary flex items-center gap-1.5 text-sm" onClick={() => statusMutation.mutate({ id: order._id, status: 'packing' })} disabled={statusMutation.isPending}>
@@ -149,13 +181,14 @@ export function ChemistDashboard() {
                     </button>
                   )}
                   {order.status === 'ready' && (
-                    <button className="btn-secondary flex items-center gap-1.5 text-sm text-green-600 border-green-200 dark:border-green-900 hover:bg-green-50 dark:hover:bg-green-950/20" onClick={() => statusMutation.mutate({ id: order._id, status: 'collected' })} disabled={statusMutation.isPending}>
+                    <button className="btn-secondary flex items-center gap-1.5 text-sm text-green-600 border-green-200 dark:border-green-900 hover:bg-green-50 dark:hover:bg-green-950/20" onClick={() => statusMutation.mutate({ id: order._id, status: 'collected' })} disabled={statusMutation.isPending || hasUnavailable}>
                       <Check className="h-4 w-4" /> Confirm Collected
                     </button>
                   )}
                 </div>
               </article>
-            ))}
+              )
+            })}
           </div>
         </>
       )}

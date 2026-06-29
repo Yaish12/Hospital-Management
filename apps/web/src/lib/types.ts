@@ -131,6 +131,8 @@ export type Bill = {
   tax: number
   total: number
   status: 'unpaid' | 'paid' | 'refunded'
+  paymentMethod?: 'cash' | 'upi' | 'card' | 'insurance' | 'other'
+  paymentReference?: string
   paidAt?: string
   createdAt: string
 }

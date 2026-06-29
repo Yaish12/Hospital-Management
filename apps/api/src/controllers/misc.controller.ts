@@ -29,17 +29,35 @@ export const billingList = asyncHandler(async (req, res) => {
 })
 
 export const createBill = asyncHandler(async (req, res) => {
-  const subtotal = (req.body.items ?? []).reduce((sum: number, item: any) => sum + Number(item.amount ?? 0), 0)
+  if (!mongoose.isValidObjectId(req.body.patient)) throw new AppError(400, 'Valid patient is required')
+  if (!Array.isArray(req.body.items) || req.body.items.length === 0) throw new AppError(400, 'At least one billing item is required')
+
+  const items = req.body.items.map((item: any) => {
+    const label = toTrimmedString(item.label)
+    const amount = toNumberOrDefault(item.amount, Number.NaN)
+    if (!label) throw new AppError(400, 'Billing item description is required')
+    if (amount <= 0) throw new AppError(400, 'Billing item amount must be greater than zero')
+    return { label, amount }
+  })
+  const subtotal = items.reduce((sum: number, item: any) => sum + Number(item.amount ?? 0), 0)
   const discount = Number(req.body.discount ?? 0)
   const tax = Number(req.body.tax ?? 0)
-  const bill = await Billing.create({ ...req.body, subtotal, total: subtotal - discount + tax })
+  if (discount < 0 || tax < 0) throw new AppError(400, 'Discount and tax cannot be negative')
+  if (discount > subtotal) throw new AppError(400, 'Discount cannot exceed subtotal')
+  const bill = await Billing.create({ ...req.body, items, discount, tax, subtotal, total: subtotal - discount + tax })
   res.status(201).json({ bill })
 })
 
 export const updateBillStatus = asyncHandler(async (req, res) => {
   const { billId, status } = req.body
+  if (!mongoose.isValidObjectId(billId)) throw new AppError(400, 'Valid bill is required')
+  if (!['unpaid', 'paid', 'refunded'].includes(status)) throw new AppError(400, 'Invalid bill status')
   const patch: Record<string, unknown> = { status }
-  if (status === 'paid') patch.paidAt = new Date()
+  if (status === 'paid') {
+    patch.paidAt = new Date()
+    patch.paymentMethod = req.body.paymentMethod || 'cash'
+    patch.paymentReference = toTrimmedString(req.body.paymentReference)
+  }
   const bill = await Billing.findByIdAndUpdate(billId, patch, { new: true }).populate('patient appointment')
   if (!bill) throw new AppError(404, 'Bill not found')
   res.json({ bill })

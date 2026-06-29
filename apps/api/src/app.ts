@@ -2,6 +2,7 @@ import path from 'node:path'
 import compression from 'compression'
 import cors from 'cors'
 import express from 'express'
+import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import morgan from 'morgan'
@@ -28,7 +29,10 @@ export const createApp = () => {
   app.use(morgan('dev'))
   app.use('/uploads', express.static(path.resolve(env.uploadDir)))
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'hospital-api' }))
+  app.get('/api/health', (_req, res) => {
+    const dbConnected = mongoose.connection.readyState === 1
+    res.json({ ok: true, service: 'hospital-api', database: dbConnected ? 'connected' : 'disconnected' })
+  })
   app.use('/api/auth', authRoutes)
 
   app.use('/api/patients', authenticate, patientRoutes)

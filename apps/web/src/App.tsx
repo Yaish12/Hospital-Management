@@ -11,6 +11,7 @@ import { ChangePassword } from './pages/ChangePassword'
 import { ChemistDashboard } from './pages/ChemistDashboard'
 import { DoctorDashboard } from './pages/DoctorDashboard'
 import { ForgotPassword } from './pages/ForgotPassword'
+import { LandingPage } from './pages/LandingPage'
 import { Login } from './pages/Login'
 import { NotificationsPage } from './pages/NotificationsPage'
 import { PatientDashboard } from './pages/PatientDashboard'
@@ -43,6 +44,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <Routes>
         {/* Public routes */}
+        <Route path="/" element={user ? <Navigate to={`/${user.role}`} replace /> : <LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
@@ -50,12 +52,6 @@ export default function App() {
         {/* Protected routes — require auth */}
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
-            {/* Root redirect based on role */}
-            <Route
-              path="/"
-              element={<Navigate to={user ? `/${user.role}` : '/login'} replace />}
-            />
-
             {/* Role dashboards */}
             <Route element={<ProtectedRoute roles={['admin']} />}>
               <Route path="/admin" element={<AdminDashboard />} />

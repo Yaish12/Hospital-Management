@@ -210,6 +210,8 @@ const billingSchema = schema(
     tax: { type: Number, default: 0 },
     total: { type: Number, required: true },
     status: { type: String, enum: ['unpaid', 'paid', 'refunded'], default: 'unpaid' },
+    paymentMethod: { type: String, enum: ['cash', 'upi', 'card', 'insurance', 'other'] },
+    paymentReference: String,
     paidAt: Date
   },
   { timestamps: true }
