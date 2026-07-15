@@ -15,8 +15,11 @@ const publicUser = (user: any) => ({
 })
 
 export const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body
-  const user = await User.findOne({ email: String(email).toLowerCase() })
+  const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : ''
+  const password = typeof req.body.password === 'string' ? req.body.password : ''
+  if (!email || !password) throw new AppError(400, 'Email and password are required')
+
+  const user = await User.findOne({ email })
   if (!user || !(await verifyPassword(password, user.passwordHash))) throw new AppError(401, 'Invalid email or password')
   if (user.status !== 'active') throw new AppError(403, 'Account is inactive')
 

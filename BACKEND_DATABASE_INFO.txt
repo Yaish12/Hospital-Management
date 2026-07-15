@@ -1,0 +1,172 @@
+Hospital Management Backend And Database Notes
+==============================================
+
+Why sign-in was failing
+-----------------------
+The latest backend log shows this error:
+
+MongooseServerSelectionError: connect ECONNREFUSED 127.0.0.1:27017
+
+That means the API cannot connect to MongoDB. Login depends on the User collection in MongoDB, so signing in will fail until MongoDB is running and the seed data exists.
+
+Project folders
+---------------
+Root folder:
+D:\Hospital management\Hospital-Management
+
+Backend API:
+apps\api
+
+Frontend web app:
+apps\web
+
+Database configuration
+----------------------
+The backend reads database settings from:
+apps\api\.env
+
+Current local database URI:
+mongodb://127.0.0.1:27017/hospital_management
+
+Default code fallback if .env is missing:
+mongodb://127.0.0.1:27017/hospital_management
+
+Docker Compose database URI used by the API container:
+mongodb://mongo:27017/hospital_management
+
+MongoDB database name:
+hospital_management
+
+MongoDB host and port for local development:
+127.0.0.1:27017
+
+How to start locally
+--------------------
+1. Install dependencies from the project root:
+npm install
+
+2. Start MongoDB locally.
+If MongoDB is installed as a service, start the MongoDB service from Windows Services.
+If using Docker only for MongoDB, run:
+docker compose up -d mongo
+
+3. Seed the database:
+npm run seed
+
+4. Start the backend API:
+npm run dev:api
+
+5. Start the frontend web app in another terminal:
+npm run dev:web
+
+Local URLs
+----------
+Frontend:
+http://localhost:5173
+http://127.0.0.1:5173
+
+Backend API:
+http://localhost:4000
+
+Backend health check:
+http://localhost:4000/api/health
+
+Login endpoint:
+POST http://localhost:4000/api/auth/login
+
+Frontend API setting
+--------------------
+The frontend reads its API URL from:
+apps\web\.env
+
+Current frontend API URL:
+VITE_API_URL=http://localhost:4000/api
+
+Current Socket.IO URL:
+VITE_SOCKET_URL=http://localhost:4000
+
+Default seed login accounts
+---------------------------
+All accounts use this password:
+Password@123
+
+Admin:
+admin@hospital.local
+
+Receptionist:
+reception@hospital.local
+
+Doctor:
+doctor@hospital.local
+
+Chemist:
+chemist@hospital.local
+
+Patient:
+patient@hospital.local
+
+How to test login with PowerShell
+---------------------------------
+After MongoDB is running, the database is seeded, and the API is started, run:
+
+Invoke-RestMethod -Method Post -Uri http://localhost:4000/api/auth/login -ContentType "application/json" -Body '{"email":"admin@hospital.local","password":"Password@123"}'
+
+Expected result:
+The response should include user, accessToken, and refreshToken.
+
+Useful database commands
+------------------------
+Open MongoDB shell if mongosh is installed:
+mongosh "mongodb://127.0.0.1:27017/hospital_management"
+
+Show collections:
+show collections
+
+Find seed users:
+db.users.find({}, { email: 1, role: 1, status: 1 }).pretty()
+
+Count users:
+db.users.countDocuments()
+
+Reset local data and recreate seed data:
+npm run seed
+
+Docker full app
+---------------
+To run the whole app with Docker:
+docker compose up --build
+
+Docker web URL:
+http://localhost:8080
+
+Docker API URL:
+http://localhost:4000
+
+Seed Docker database:
+docker compose exec api node apps/api/dist/seed.js
+
+Common problems
+---------------
+Problem:
+Backend shows ECONNREFUSED 127.0.0.1:27017.
+
+Fix:
+MongoDB is not running or MONGODB_URI points to the wrong host. Start MongoDB or update apps\api\.env.
+
+Problem:
+Login says invalid email or password.
+
+Fix:
+Run npm run seed, then use one of the seed emails above with Password@123.
+
+Problem:
+Frontend cannot reach backend.
+
+Fix:
+Make sure apps\web\.env has VITE_API_URL=http://localhost:4000/api and the API is running on port 4000.
+
+Problem:
+CORS error in browser.
+
+Fix:
+Make sure apps\api\.env has CLIENT_ORIGIN=http://localhost:5173,http://127.0.0.1:5173 for local Vite development.

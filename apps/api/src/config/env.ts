@@ -15,7 +15,7 @@ export const env = {
   jwtRefreshSecret: required('JWT_REFRESH_SECRET', 'change-me-refresh-secret'),
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
-  clientOrigins: (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').split(',').map((origin) => origin.trim()),
+  clientOrigins: (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173,http://127.0.0.1:5173').split(',').map((origin) => origin.trim()),
   uploadDir: process.env.UPLOAD_DIR ?? 'uploads',
   smtp: {
     host: process.env.SMTP_HOST,
